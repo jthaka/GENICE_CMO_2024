@@ -1,0 +1,29 @@
+#Single assembly (NOTE: co-assembly was also performed, but fastq files were concatenated prior and inputed into the same code below)
+set -euo pipefail
+set -x
+mkdir -p ./logs
+
+# Load required environment
+module load spades
+
+sample=$(sed -n "${SLURM_ARRAY_TASK_ID}p" ./sample_codes.txt)
+
+exec > ./logs/operams_${SLURM_ARRAY_JOB_ID}_${SLURM_ARRAY_TASK_ID}_${sample}.out
+exec 2> ./logs/operams_${SLURM_ARRAY_JOB_ID}_${SLURM_ARRAY_TASK_ID}_${sample}.err
+
+echo "Running sample: $sample"
+echo "Task ID: $SLURM_ARRAY_TASK_ID"
+echo "Node: $(hostname)"
+date
+
+# Run HybridSPAdes
+metaspades.py \
+  -1 /home/jthakar/projects/def-nagissa/CMO_2024_Metagenome/illumina_fastq/9385/clean_fastq/${sample}_clean_R1.fastq.gz\
+  -2 /home/jthakar/projects/def-nagissa/CMO_2024_Metagenome/illumina_fastq/9385/clean_fastq/${sample}_clean_R2.fastq.gz \
+--nanopore /home/jthakar/projects/def-nagissa/CMO_2024_Metagenome/CMO2024_nanopore/non_concat/concat_nanopore/${sample}_nanopore.fastq \
+  -o /home/jthakar/scratch/hybrid_spades_test/metaspades_hybrid_single_${sample} \
+  --meta \
+  -k 33,55,77,99,127 \
+  -m 90 \
+  -t 32 \
+  --only-assembler
