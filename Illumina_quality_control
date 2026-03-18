@@ -1,0 +1,81 @@
+mkdir -p ./fastp_clean/
+mkdir -p ./phix_clean/
+mkdir -p ./human_clean/
+mkdir -p ./human_contam/
+mkdir -p ./clean_fastq/
+mkdir -p ./error_discarded/
+mkdir -p ./fastp_clean/fastp_clean_fastqc/
+mkdir -p ./phix_clean/phix_clean_fastqc/
+mkdir -p ./human_clean/human_clean_fastqc/
+mkdir -p ./clean_fastq/clean_fastqc/
+
+sample=$(sed -n "${SLURM_ARRAY_TASK_ID}p" sample_recovery_g.txt)
+
+# Use sample name for log output
+exec > /home/jthakar/scratch/CMO2024_metagenome_tempfiles/${sample}_fastp.out 2>&1
+echo "Starting fastp at $(date)"
+echo "On sample: $sample"
+fastp \
+-i ${sample}_R1_001.fastq.gz \
+-o ./fastp_clean/${sample}_R1_fastp.fastq.gz \
+-I ${sample}_R2_001.fastq.gz \
+-O ./fastp_clean/${sample}_R2_fastp.fastq.gz \
+-y \
+-g \
+-x \
+-q 20 \
+-l 150 \
+-h ./fastp_clean/${sample}_fastplog.html -R "CMO2024_Metagenome_Quality_Trimming_fastp" \
+--thread $SLURM_CPUS_PER_TASK
+
+# Remove phix contamination with bbduk
+exec > /home/jthakar/scratch/CMO2024_metagenome_tempfiles/${sample}_phix_remove.out 2>&1
+echo "Starting phix removal at $(date)"
+#Note, the phix.fa file is included in bbmaps internal resources. However, to remove common human contaminants, we have to download the file from
+#https://archive.jgi.doe.gov/data-and-tools/software-tools/bbtools/bb-tools-user-guide/bbduk-guide/
+bbduk.sh \
+in1=./fastp_clean/${sample}_R1_fastp.fastq.gz \
+in2=./fastp_clean/${sample}_R2_fastp.fastq.gz \
+out1=./phix_clean/${sample}_nophix_R1.fastq.gz \
+out2=./phix_clean/${sample}_nophix_R2.fastq.gz \
+ref=$(dirname $(which bbduk.sh))/resources/phix174_ill.ref.fa.gz \
+k=31 \
+hdist=1 \
+stats=/scratch/jthakar/CMO2024_fastq_cleaning_temp/${sample}_phix_stats.txt \
+threads=$SLURM_CPUS_PER_TASK
+
+# Remove human contamination with bbduk
+exec > /home/jthakar/scratch/CMO2024_metagenome_tempfiles/${sample}_human_remove.out 2>&1
+echo "Starting human contam removal at $(date)"
+removehuman.sh \
+path=/project/6105702/CMO_2024_Metagenome/reference_contam/hg19_index/ \
+in1=./phix_clean/${sample}_nophix_R1.fastq.gz \
+in2=./phix_clean/${sample}_nophix_R2.fastq.gz \
+outu1=./human_clean/${sample}_nohum_R1.fastq.gz \
+outu2=./human_clean/${sample}_nohum_R2.fastq.gz \
+outm1=./human_contam/${sample}_humancon_R1.fastq.gz \
+outm2=./human_contam/${sample}_humancon_R2.fastq.gz \
+threads=$SLURM_CPUS_PER_TASK \
+-Xmx23g
+
+# Perform read-depth filtering and error correction with bbcms (note, the filtering threshold
+# was optimized for CMO metagenome samples to give the best assembly quality, you may need to change this
+# depending on your goals)
+exec > /home/jthakar/scratch/CMO2024_metagenome_tempfiles/${sample}_error_correct.out 2>&1
+echo "Starting error correction at $(date)"
+bbcms.sh \
+in=./human_clean/${sample}_nohum_R1.fastq.gz \
+in2=./human_clean/${sample}_nohum_R2.fastq.gz \
+out=./clean_fastq/${sample}_clean_R1.fastq.gz \
+out2=./clean_fastq/${sample}_clean_R2.fastq.gz \
+outb=./error_discarded/${sample}_error_discard_R1.fastq.gz \
+outb2=./error_discarded/${sample}_error_discard_R2.fastq.gz \
+mincount=2 \
+hcf=0.3 \
+threads=$SLURM_CPUS_PER_TASK
+
+#Generate fastqc reports for each step
+fastqc ./fastp_clean/${sample}_*fastq.gz -o ./fastp_clean/fastp_clean_fastqc/
+fastqc ./phix_clean/${sample}_*fastq.gz -o ./phix_clean/phix_clean_fastqc/
+fastqc ./human_clean/${sample}_*fastq.gz -o ./human_clean/human_clean_fastqc/
+fastqc ./clean_fastq/${sample}_*fastq.gz -o ./clean_fastq/clean_fastqc/
