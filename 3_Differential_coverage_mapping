@@ -1,0 +1,32 @@
+#INDEX EACH INDIVIDUAL SAMPLE ASSEMBLY (OR CO-ASSEMBLY)-----------------------------------------------------------------------------------------------------------------------
+sample_assembly=$(sed -n "${SLURM_ARRAY_TASK_ID}p" sample_assembly.txt)  #Note, sample_assembly.txt is just a base directory name for each assembly.
+mkdir -p path/for/indices/${sample_assembly}/
+bowtie2-build /path/to/assemblies/${sample_assembly}/contigs.fasta path/for/indices/${sample_assembly}/${sample_assembly}_index
+
+
+#ALLIGN EACH SINGLE SAMPLE ASSEMBLY (OR CO-ASSEMBLY) TO ALL OTHER SAMPLES------------------------------------------------------------------------------------------------------
+
+# Get ONLY index from array
+echo "Running index: $index"
+echo "Task ID: $SLURM_ARRAY_TASK_ID"
+echo "Node: $(hostname)"
+date
+
+#Make output directories and define .out and .err files for troubleshooting
+mkdir -p path/for/sam/files/${sample_assembly}/
+outdir="path/for/sam/files/${sample_assembly}/"
+mkdir -p "$outdir/logs"
+logdir="$outdir/logs"
+exec > "$logdir/${SLURM_ARRAY_JOB_ID}_${SLURM_ARRAY_TASK_ID}_${sample_assembly}.out"
+exec 2> "$logdir/${SLURM_ARRAY_JOB_ID}_${SLURM_ARRAY_TASK_ID}_${sample_assembly}.err"
+
+
+# Loop through ALL samples (NOTE: samples.txt, referenced below, is just the base name of your fastq files)
+for sample in $(cat samples.txt); do
+    echo "Processing sample: $sample for index: $index"
+bowtie2 \
+    -x path/for/indices/${sample_assembly}/ \
+    -1 path/to/fastq/files/${sample}_R1.fastq.gz \
+    -2 path/to/fastq/files/${sample}_R2.fastq.gz \
+    -S "$outdir/${sample}_vs_${index}.sam"
+    done
